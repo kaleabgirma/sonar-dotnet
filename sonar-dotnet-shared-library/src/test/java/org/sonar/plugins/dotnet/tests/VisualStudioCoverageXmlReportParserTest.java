@@ -97,7 +97,7 @@ public class VisualStudioCoverageXmlReportParserTest {
     assertThat(logTester.logs(LoggerLevel.DEBUG).get(0)).startsWith("The current user dir is ");
     assertThat(logTester.logs(LoggerLevel.TRACE)).hasSize(2);
     assertThat(logTester.logs(LoggerLevel.TRACE).get(1))
-      .startsWith("Found coverage information about '16' lines for file id '0' , path ")
+      .startsWith("Found coverage information about '16' lines having single-line sequence points for file '")
       .endsWith("\\MyLibrary\\Calc.cs'");
   }
 
@@ -124,7 +124,7 @@ public class VisualStudioCoverageXmlReportParserTest {
     assertThat(logTester.logs(LoggerLevel.DEBUG).get(0)).startsWith("The current user dir is ");
     assertThat(logTester.logs(LoggerLevel.TRACE)).hasSize(2);
     assertThat(logTester.logs(LoggerLevel.TRACE).get(1))
-      .startsWith("Found coverage information about '1' lines for file id '0' , path ")
+      .startsWith("Found coverage information about '1' lines having single-line sequence points for file '")
       .endsWith("\\GetSet\\Bar.cs'");
   }
 
@@ -151,7 +151,7 @@ public class VisualStudioCoverageXmlReportParserTest {
     assertThat(logTester.logs(LoggerLevel.DEBUG).get(0)).startsWith("The current user dir is ");
     assertThat(logTester.logs(LoggerLevel.TRACE)).hasSize(2);
     assertThat(logTester.logs(LoggerLevel.TRACE).get(0))
-      .startsWith("Found coverage information about '1' lines for file id '0' , path ")
+      .startsWith("Found coverage information about '1' lines having single-line sequence points for file '")
       .endsWith("\\GetSet\\Bar.cs'");
   }
 
@@ -212,9 +212,8 @@ public class VisualStudioCoverageXmlReportParserTest {
     assertThat(logTester.logs(LoggerLevel.INFO).get(0)).startsWith("Parsing the Visual Studio coverage XML report ");
     assertThat(logTester.logs(LoggerLevel.DEBUG).get(0)).startsWith("The current user dir is ");
     assertThat(logTester.logs(LoggerLevel.TRACE)).hasSize(3);
-    assertThat(logTester.logs(LoggerLevel.TRACE).get(1))
-      .startsWith("Found coverage information about '10' lines for file id '1' , path ")
-      .endsWith("\\GetSet\\Bar.cs'");
+    assertThat(logTester.logs(LoggerLevel.TRACE))
+      .contains(String.format("Found coverage information about '10' lines having single-line sequence points for file '%s'", filePath));
   }
 
   @Test
@@ -250,7 +249,7 @@ public class VisualStudioCoverageXmlReportParserTest {
     assertThat(logTester.logs(LoggerLevel.DEBUG).get(0)).startsWith("The current user dir is ");
     assertThat(logTester.logs(LoggerLevel.WARN)).isEmpty();
     assertThat(logTester.logs(LoggerLevel.TRACE).get(0))
-      .startsWith("Found coverage information about '10' lines for file id '0' , path ")
+      .startsWith("Found coverage information about '10' lines having single-line sequence points for file '")
       .endsWith("\\MyLibrary\\Calc.cs'");
   }
 

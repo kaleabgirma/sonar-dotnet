@@ -125,8 +125,6 @@ public class OpenCoverReportParser implements CoverageParser {
             coverage.addBranchCoverage(filePath, new BranchCoverage(line, branchExitsCount, branchExitsVisit));
           }
 
-          coverage.addHits(filePath, line, visitCount);
-
           sequencePointCollector.add(new SequencePoint(filePath, line, endLine, visitCount));
         } else {
           LOG.debug("Skipping the fileId '{}', line '{}', vc '{}' because file '{}'" +

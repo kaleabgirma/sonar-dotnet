@@ -19,15 +19,14 @@
  */
 package org.sonar.plugins.dotnet.tests;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.function.Predicate;
 import org.sonar.api.utils.log.Logger;
 import org.sonar.api.utils.log.Loggers;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.function.Predicate;
 
 public class VisualStudioCoverageXmlReportParser implements CoverageParser {
 
@@ -49,11 +48,8 @@ public class VisualStudioCoverageXmlReportParser implements CoverageParser {
   private class Parser {
 
     private final File file;
-    /**
-     * The key is the file ID.
-     * The value is the line coverage information for that file.
-     */
-    private final Map<Integer, LineCoverage> lineCoveragePerFile = new HashMap<>();
+    private final SequencePointCollector sequencePointCollector = new SequencePointCollector();
+    private final Map<Integer, String> sourceIdToFilePathMap = new HashMap<>();
     private final Coverage coverage;
 
     Parser(File file, Coverage coverage) {
@@ -74,17 +70,21 @@ public class VisualStudioCoverageXmlReportParser implements CoverageParser {
       String tagName;
       while ((tagName = xmlParserHelper.nextStartTag()) != null) {
         if ("module".equals(tagName)) {
-          handleModuleTag();
+          publishCoverage();
         } else if ("range".equals(tagName)) {
           handleRangeTag(xmlParserHelper);
         } else if ("source_file".equals(tagName)) {
           handleSourceFileTag(xmlParserHelper);
         }
       }
+
+      publishCoverage();
     }
 
-    private void handleModuleTag() {
-      lineCoveragePerFile.clear();
+    private void publishCoverage() {
+      sequencePointCollector.publishCoverage(coverage);
+      sequencePointCollector.clear();
+      sourceIdToFilePathMap.clear();
     }
 
     /**
@@ -97,13 +97,12 @@ public class VisualStudioCoverageXmlReportParser implements CoverageParser {
       String covered = xmlParserHelper.getRequiredAttribute("covered");
 
       int line = xmlParserHelper.getRequiredIntAttribute("start_line");
+      int lineEnd = xmlParserHelper.getRequiredIntAttribute("end_line");
 
-      lineCoveragePerFile.putIfAbsent(source, new LineCoverage(source));
-      LineCoverage lineCoverage = lineCoveragePerFile.get(source);
       if ("yes".equals(covered) || "partial".equals(covered)) {
-        lineCoverage.addCoverageForLine(line, true);
+        sequencePointCollector.add(new SourceIdSequencePoint(source, line, lineEnd, 1, sourceIdToFilePathMap));
       } else if ("no".equals(covered)) {
-        lineCoverage.addCoverageForLine(line, false);
+        sequencePointCollector.add(new SourceIdSequencePoint(source, line, lineEnd, 0, sourceIdToFilePathMap));
       } else {
         throw xmlParserHelper.parseError("Unsupported \"covered\" value \"" + covered + "\", expected one of \"yes\", \"partial\" or \"no\"");
       }
@@ -131,10 +130,7 @@ public class VisualStudioCoverageXmlReportParser implements CoverageParser {
         return;
       }
 
-      LineCoverage fileCoverage = lineCoveragePerFile.get(id);
-      if (fileCoverage != null) {
-        fileCoverage.transferData(coverage, canonicalPath);
-      }
+      sourceIdToFilePathMap.put(id, canonicalPath);
     }
 
     private void checkRootTag(XmlParserHelper xmlParserHelper) {
@@ -142,56 +138,19 @@ public class VisualStudioCoverageXmlReportParser implements CoverageParser {
     }
   }
 
-  private static class LineCoverage {
+  static class SourceIdSequencePoint extends SequencePoint {
+    private final int sourceId;
+    private final Map<Integer, String> sourceIdToFilePathMap;
 
-    int fileId;
-
-    // the key is the line ID
-    // the values are a list of booleans, where
-    // - 'True' means the line is covered or partially covered
-    // - 'False' means the line is not covered
-    private Map<Integer, List<Boolean>> coveragePerLine;
-
-    LineCoverage(int fileId) {
-      this.fileId = fileId;
-      this.coveragePerLine = new HashMap<>();
+    SourceIdSequencePoint(int sourceId, int lineStart, int lineEnd, int hits, Map<Integer, String> sourceIdToFilePathMap) {
+      super(lineStart, lineEnd, hits);
+      this.sourceId = sourceId;
+      this.sourceIdToFilePathMap = sourceIdToFilePathMap;
     }
 
-    void addCoverageForLine(Integer lineId, Boolean isCovered) {
-      coveragePerLine.putIfAbsent(lineId, new ArrayList<>());
-      coveragePerLine.get(lineId).add(isCovered);
-    }
-
-    /**
-     * Transfers the coverage data to the Coverage object.
-     * @param coverage - the object which centralizes coverage information.
-     * @param canonicalFilePath - the path of the file for which this class contains coverage data.
-     */
-    void transferData(Coverage coverage, String canonicalFilePath) {
-      LOG.trace("Found coverage information about '{}' lines for file id '{}' , path '{}'",
-        coveragePerLine.size(), fileId, canonicalFilePath);
-
-      for (Map.Entry<Integer, List<Boolean>> lineCoverage : coveragePerLine.entrySet()) {
-
-        Integer lineId = lineCoverage.getKey();
-        Iterable<Boolean> coverageValues = lineCoverage.getValue();
-        int visits = 0;
-        int entryCount = 0;
-        // process line coverage
-        for (Boolean value : coverageValues) {
-          int visit = value ? 1 : 0;
-          coverage.addHits(canonicalFilePath, lineId, visit);
-          visits += visit;
-          entryCount++;
-        }
-        // where we have both covered and uncovered, use branch coverage
-        // e.g. auto-implemented property with getter and setter
-        if (entryCount > 1) {
-          // this is not really branch coverage, but it's better than nothing
-          coverage.addBranchCoverage(canonicalFilePath, new BranchCoverage(lineId, entryCount, visits));
-        }
-      }
+    @Override
+    public String getFilePath() {
+      return sourceIdToFilePathMap.get(sourceId);
     }
   }
-
 }

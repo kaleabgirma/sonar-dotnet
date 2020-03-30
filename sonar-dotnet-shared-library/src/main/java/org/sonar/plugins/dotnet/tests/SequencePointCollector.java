@@ -33,14 +33,18 @@ public class SequencePointCollector {
   private Set<SequencePoint> sequencePoints = new HashSet<>();
 
   public void add(SequencePoint sequencePoint){
-    // we only want to count covered sequences when these are on the same line
-    if (sequencePoint.getStartLine() == sequencePoint.getLineEnd()) {
-      sequencePoints.add(sequencePoint);
-    }
+    sequencePoints.add(sequencePoint);
+  }
+
+  public void clear() {
+    sequencePoints.clear();
   }
 
   public void publishCoverage(Coverage coverage){
-    Map<String, List<SequencePoint>> sequencePointsPerFile = sequencePoints.stream().collect(Collectors.groupingBy(SequencePoint::getFilePath));
+    Map<String, List<SequencePoint>> sequencePointsPerFile = sequencePoints.stream()
+      .filter(point -> point.getFilePath() != null)
+      .collect(Collectors.groupingBy(SequencePoint::getFilePath));
+
     for (Map.Entry<String, List<SequencePoint>> fileSequencePoints : sequencePointsPerFile.entrySet()){
       publishCoverage(coverage, fileSequencePoints.getKey(), fileSequencePoints.getValue());
     }
@@ -52,14 +56,15 @@ public class SequencePointCollector {
     LOG.trace("Found coverage information about '{}' lines having single-line sequence points for file '{}'", sequencePointsPerLine.size(), filePath);
 
     for (Map.Entry<Integer, List<SequencePoint>> lineSequencePoints : sequencePointsPerLine.entrySet()){
-      if (lineSequencePoints.getValue().size() > 1){
-        int line = lineSequencePoints.getKey();
+      int line = lineSequencePoints.getKey();
+      List<SequencePoint> linePoints = lineSequencePoints.getValue();
 
-        List<SequencePoint> linePoints = lineSequencePoints.getValue();
+      if (linePoints.size() > 1){
         int coveredPoints = (int)linePoints.stream().filter(point -> point.getHits() > 0).count();
-
         coverage.addBranchCoverage(filePath, new BranchCoverage(line, linePoints.size(), coveredPoints));
       }
+
+      coverage.addHits(filePath, line, linePoints.stream().mapToInt(SequencePoint::getHits).sum());
     }
   }
 }

@@ -108,7 +108,6 @@ public class DotCoverReportParser implements CoverageParser {
         int lineEnd = Integer.parseInt(matcher.group(2));
         int hits = Integer.parseInt(matcher.group(3));
 
-        coverage.addHits(fileCanonicalPath, lineStart, hits);
         collector.add(new SequencePoint(fileCanonicalPath, lineStart, lineEnd, hits));
 
         LOG.trace("dotCover parser: found coverage for line '{}', hits '{}' when analyzing the path '{}'.",
