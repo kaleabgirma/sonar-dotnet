@@ -41,7 +41,7 @@ namespace SonarAnalyzer.UnitTest.Rules.SymbolicExecution
             var sut = new SymbolicExecutionAnalyzerFactory();
             var supportedDiagnostics = sut.SupportedDiagnostics.Select(descriptor => descriptor.Id).ToList();
 
-            CollectionAssert.AreEquivalent(supportedDiagnostics, new[] {"S3655", "S3966"});
+            CollectionAssert.AreEquivalent(supportedDiagnostics, new[] {"S3655", "S3966", "S3900"});
         }
 
         [DataTestMethod]

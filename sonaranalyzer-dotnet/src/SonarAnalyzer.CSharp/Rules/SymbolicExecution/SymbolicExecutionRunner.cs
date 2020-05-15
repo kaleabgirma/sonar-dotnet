@@ -34,6 +34,7 @@ namespace SonarAnalyzer.Rules.SymbolicExecution
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
     [Rule(EmptyNullableValueAccess.DiagnosticId)]
     [Rule(ObjectsShouldNotBeDisposedMoreThanOnce.DiagnosticId)]
+    [Rule(PublicMethodArgumentsShouldBeCheckedForNull.DiagnosticId)]
     public sealed class SymbolicExecutionRunner : SonarDiagnosticAnalyzer
     {
         private readonly SymbolicExecutionAnalyzerFactory symbolicExecutionAnalyzerFactory = new SymbolicExecutionAnalyzerFactory();
@@ -72,6 +73,6 @@ namespace SonarAnalyzer.Rules.SymbolicExecution
         private IEnumerable<ISymbolicExecutionAnalysisContext> InitializeAnalyzers(CSharpExplodedGraph explodedGraph, SyntaxNodeAnalysisContext context) =>
             this.symbolicExecutionAnalyzerFactory
                 .GetEnabledAnalyzers(context)
-                .Select(analyzer => analyzer.AddChecks(explodedGraph));
+                .Select(analyzer => analyzer.AddChecks(explodedGraph, context));
     }
 }

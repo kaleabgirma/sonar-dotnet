@@ -38,7 +38,8 @@ namespace SonarAnalyzer.Rules.SymbolicExecution
             // Symbolic execution analyzers and supported diagnostics will not change at runtime so they can be safely cached.
             this.analyzers = ImmutableArray.Create<ISymbolicExecutionAnalyzer>(
                 new EmptyNullableValueAccess(),
-                new ObjectsShouldNotBeDisposedMoreThanOnce());
+                new ObjectsShouldNotBeDisposedMoreThanOnce(),
+                new PublicMethodArgumentsShouldBeCheckedForNull());
 
             SupportedDiagnostics = this.analyzers.SelectMany(analyzer => analyzer.SupportedDiagnostics).ToImmutableArray();
         }
