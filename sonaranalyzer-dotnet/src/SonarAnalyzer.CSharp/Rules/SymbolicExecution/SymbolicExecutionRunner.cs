@@ -18,7 +18,6 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -36,6 +35,8 @@ namespace SonarAnalyzer.Rules.SymbolicExecution
     [Rule(ObjectsShouldNotBeDisposedMoreThanOnce.DiagnosticId)]
     [Rule(PublicMethodArgumentsShouldBeCheckedForNull.DiagnosticId)]
     [Rule(EmptyCollectionsShouldNotBeEnumerated.DiagnosticId)]
+    [Rule(ConditionEvaluatesToConstant.S2583DiagnosticId)]
+    [Rule(ConditionEvaluatesToConstant.S2589DiagnosticId)]
     public sealed class SymbolicExecutionRunner : SonarDiagnosticAnalyzer
     {
         private readonly SymbolicExecutionAnalyzerFactory symbolicExecutionAnalyzerFactory = new SymbolicExecutionAnalyzerFactory();

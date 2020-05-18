@@ -18,7 +18,6 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -26,9 +25,9 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
-using SonarAnalyzer.Common;
 using SonarAnalyzer.ControlFlowGraph;
 using SonarAnalyzer.Helpers;
+using SonarAnalyzer.Rules.SymbolicExecution;
 using SonarAnalyzer.ShimLayer.CSharp;
 using SonarAnalyzer.SymbolicExecution;
 using SonarAnalyzer.SymbolicExecution.Constraints;
@@ -36,10 +35,7 @@ using CSharpExplodedGraph = SonarAnalyzer.SymbolicExecution.CSharpExplodedGraph;
 
 namespace SonarAnalyzer.Rules.CSharp
 {
-    [DiagnosticAnalyzer(LanguageNames.CSharp)]
-    [Rule(S2583DiagnosticId)]
-    [Rule(S2589DiagnosticId)]
-    public sealed class ConditionEvaluatesToConstant : SonarDiagnosticAnalyzer
+    internal sealed class ConditionEvaluatesToConstant : ISymbolicExecutionAnalyzer
     {
         private static readonly ISet<SyntaxKind> omittedSyntaxKinds = new HashSet<SyntaxKind>
         {
@@ -94,50 +90,53 @@ namespace SonarAnalyzer.Rules.CSharp
 
         private const string MessageFormat = "{0}";
 
-        private const string S2583DiagnosticId = "S2583"; // Bug
+        internal const string S2583DiagnosticId = "S2583"; // Bug
         private const string S2583MessageFormatBool = "Change this condition so that it does not always evaluate to '{0}'; some subsequent code is never executed.";
         private const string S2583MessageNotNull = "Change this expression which always evaluates to 'not null'; some subsequent code is never executed.";
 
-        private const string S2589DiagnosticId = "S2589"; // Code smell
+        internal const string S2589DiagnosticId = "S2589"; // Code smell
         private const string S2589MessageFormatBool = "Change this condition so that it does not always evaluate to '{0}'.";
         private const string S2589MessageNull = "Change this expression which always evaluates to 'null'.";
 
         private static readonly DiagnosticDescriptor s2583 = DiagnosticDescriptorBuilder.GetDescriptor(S2583DiagnosticId, MessageFormat, RspecStrings.ResourceManager);
         private static readonly DiagnosticDescriptor s2589 = DiagnosticDescriptorBuilder.GetDescriptor(S2589DiagnosticId, MessageFormat, RspecStrings.ResourceManager);
 
-        public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } = ImmutableArray.Create(s2583, s2589);
+        public IEnumerable<DiagnosticDescriptor> SupportedDiagnostics { get; } = ImmutableArray.Create(s2583, s2589);
 
-        protected override void Initialize(SonarAnalysisContext context)
+        public ISymbolicExecutionAnalysisContext AddChecks(CSharpExplodedGraph explodedGraph, SyntaxNodeAnalysisContext context) =>
+            new AnalysisContext(explodedGraph, context);
+
+        private sealed class AnalysisContext : ISymbolicExecutionAnalysisContext
         {
-            context.RegisterExplodedGraphBasedAnalysis((e, c) => CheckForRedundantConditions(e, c));
-        }
+            private readonly CSharpExplodedGraph explodedGraph;
+            private readonly SyntaxNodeAnalysisContext context;
 
-        private static void CheckForRedundantConditions(CSharpExplodedGraph explodedGraph, SyntaxNodeAnalysisContext context)
-        {
-            var conditionTrue = new HashSet<SyntaxNode>();
-            var conditionFalse = new HashSet<SyntaxNode>();
-            var isNull = new HashSet<SyntaxNode>();
-            var isNotNull = new HashSet<SyntaxNode>();
-            var isUnknown = new HashSet<SyntaxNode>();
-            var hasYieldStatement = false;
+            private readonly HashSet<SyntaxNode> conditionTrue = new HashSet<SyntaxNode>();
+            private readonly HashSet<SyntaxNode> conditionFalse = new HashSet<SyntaxNode>();
+            private readonly HashSet<SyntaxNode> isNull = new HashSet<SyntaxNode>();
+            private readonly HashSet<SyntaxNode> isNotNull = new HashSet<SyntaxNode>();
+            private readonly HashSet<SyntaxNode> isUnknown = new HashSet<SyntaxNode>();
 
-            void InstructionProcessed(object sender, InstructionProcessedEventArgs args)
+            private bool hasYieldStatement;
+
+            public AnalysisContext(CSharpExplodedGraph explodedGraph, SyntaxNodeAnalysisContext context)
             {
-                hasYieldStatement = hasYieldStatement || IsYieldNode(args.ProgramPoint.Block);
-                CollectCoalesce(args, isNull, isNotNull, isUnknown, context.SemanticModel);
+                this.explodedGraph = explodedGraph;
+                this.context = context;
+
+                explodedGraph.InstructionProcessed += InstructionProcessed;
+                explodedGraph.ConditionEvaluated += CollectConditions;
             }
 
-            void CollectConditions(object sender, ConditionEvaluatedEventArgs args) =>
-                ConditionEvaluatesToConstant.CollectConditions(args, conditionTrue, conditionFalse, context.SemanticModel);
-
-            void ExplorationEnded(object sender, EventArgs args)
+            public IEnumerable<Diagnostic> GetDiagnostics()
             {
                 // Do not raise issue in generator functions (See #1295)
                 if (hasYieldStatement)
                 {
-                    return;
+                    return Enumerable.Empty<Diagnostic>();
                 }
-                Enumerable.Empty<Diagnostic>()
+
+                return Enumerable.Empty<Diagnostic>()
                     .Union(conditionTrue
                         .Except(conditionFalse)
                         .Where(c => !IsConditionOfLoopWithBreak((ExpressionSyntax)c))
@@ -151,29 +150,36 @@ namespace SonarAnalyzer.Rules.CSharp
                         .Except(isUnknown)
                         .Except(isNotNull)
                         .Where(c => !IsInsideCatchOrFinallyBlock(c))
-                        .Select(node => Diagnostic.Create(s2589, node.GetLocation(), messageArgs: S2589MessageNull)))
+                        .Select(node => Diagnostic.Create(s2589, node.GetLocation(), S2589MessageNull)))
                     .Union(isNotNull
                         .Except(isUnknown)
                         .Except(isNull)
                         .Where(c => !IsInsideCatchOrFinallyBlock(c))
-                        .Select(node => Diagnostic.Create(s2583, node.GetLocation(), messageArgs: S2583MessageNotNull)))
-                    .ToList()
-                    .ForEach(d => context.ReportDiagnosticWhenActive(d));
+                        .Select(node => Diagnostic.Create(s2583, node.GetLocation(), S2583MessageNotNull)));
             }
 
-            explodedGraph.InstructionProcessed += InstructionProcessed;
-            explodedGraph.ExplorationEnded += ExplorationEnded;
-            explodedGraph.ConditionEvaluated += CollectConditions;
-
-            try
-            {
-                explodedGraph.Walk();
-            }
-            finally
+            public void Dispose()
             {
                 explodedGraph.InstructionProcessed -= InstructionProcessed;
-                explodedGraph.ExplorationEnded -= ExplorationEnded;
                 explodedGraph.ConditionEvaluated -= CollectConditions;
+            }
+
+            private void InstructionProcessed(object sender, InstructionProcessedEventArgs args)
+            {
+                hasYieldStatement = hasYieldStatement || IsYieldNode(args.ProgramPoint.Block);
+                CollectCoalesce(args, isNull, isNotNull, isUnknown, context.SemanticModel);
+            }
+
+            private void CollectConditions(object sender, ConditionEvaluatedEventArgs args) =>
+                ConditionEvaluatesToConstant.CollectConditions(args, conditionTrue, conditionFalse, context.SemanticModel);
+
+            private static Diagnostic GetDiagnostics(SyntaxNode constantNode, bool constantValue)
+            {
+                var unreachableLocations = GetUnreachableLocations(constantNode, constantValue).ToList();
+                var constantText = constantValue.ToString().ToLowerInvariant();
+                return unreachableLocations.Count > 0
+                    ? Diagnostic.Create(s2583, constantNode.GetLocation(), messageArgs: string.Format(S2583MessageFormatBool, constantText), additionalLocations: unreachableLocations)
+                    : Diagnostic.Create(s2589, constantNode.GetLocation(), messageArgs: string.Format(S2589MessageFormatBool, constantText));
             }
         }
 
@@ -211,14 +217,7 @@ namespace SonarAnalyzer.Rules.CSharp
         private static bool IsLoopBreakingStatement(SyntaxNode syntaxNode) =>
             syntaxNode.IsAnyKind(loopBreakingStatements);
 
-        private static Diagnostic GetDiagnostics(SyntaxNode constantNode, bool constantValue)
-        {
-            var unreachableLocations = GetUnreachableLocations(constantNode, constantValue).ToList();
-            var constantText = constantValue.ToString().ToLowerInvariant();
-            return unreachableLocations.Count > 0
-                ? Diagnostic.Create(s2583, constantNode.GetLocation(), messageArgs: string.Format(S2583MessageFormatBool, constantText), additionalLocations: unreachableLocations)
-                : Diagnostic.Create(s2589, constantNode.GetLocation(), messageArgs: string.Format(S2589MessageFormatBool, constantText));
-        }
+
 
         private static IEnumerable<Location> GetUnreachableLocations(SyntaxNode constantExpression, bool constantValue)
         {
