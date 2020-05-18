@@ -35,6 +35,7 @@ namespace SonarAnalyzer.Rules.SymbolicExecution
     [Rule(EmptyNullableValueAccess.DiagnosticId)]
     [Rule(ObjectsShouldNotBeDisposedMoreThanOnce.DiagnosticId)]
     [Rule(PublicMethodArgumentsShouldBeCheckedForNull.DiagnosticId)]
+    [Rule(EmptyCollectionsShouldNotBeEnumerated.DiagnosticId)]
     public sealed class SymbolicExecutionRunner : SonarDiagnosticAnalyzer
     {
         private readonly SymbolicExecutionAnalyzerFactory symbolicExecutionAnalyzerFactory = new SymbolicExecutionAnalyzerFactory();
@@ -43,6 +44,14 @@ namespace SonarAnalyzer.Rules.SymbolicExecution
 
         public SymbolicExecutionRunner()
         {
+            SupportedDiagnostics = this.symbolicExecutionAnalyzerFactory.SupportedDiagnostics;
+        }
+
+        // Only testing purposes.
+        internal SymbolicExecutionRunner(SymbolicExecutionAnalyzerFactory symbolicExecutionAnalyzerFactory)
+        {
+            this.symbolicExecutionAnalyzerFactory = symbolicExecutionAnalyzerFactory;
+
             SupportedDiagnostics = this.symbolicExecutionAnalyzerFactory.SupportedDiagnostics;
         }
 

@@ -26,17 +26,15 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
-using SonarAnalyzer.Common;
 using SonarAnalyzer.Helpers;
+using SonarAnalyzer.Rules.SymbolicExecution;
 using SonarAnalyzer.ShimLayer.CSharp;
 using SonarAnalyzer.SymbolicExecution;
 using SonarAnalyzer.SymbolicExecution.Constraints;
 
 namespace SonarAnalyzer.Rules.CSharp
 {
-    [DiagnosticAnalyzer(LanguageNames.CSharp)]
-    [Rule(DiagnosticId)]
-    public sealed class EmptyCollectionsShouldNotBeEnumerated : SonarDiagnosticAnalyzer
+    internal sealed class EmptyCollectionsShouldNotBeEnumerated : ISymbolicExecutionAnalyzer
     {
         internal const string DiagnosticId = "S4158";
         private const string MessageFormat = "Remove this call, the collection is known to be empty here.";
@@ -44,9 +42,9 @@ namespace SonarAnalyzer.Rules.CSharp
         private static readonly DiagnosticDescriptor rule =
             DiagnosticDescriptorBuilder.GetDescriptor(DiagnosticId, MessageFormat, RspecStrings.ResourceManager);
 
-        public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } = ImmutableArray.Create(rule);
+        public IEnumerable<DiagnosticDescriptor> SupportedDiagnostics { get; } = ImmutableArray.Create(rule);
 
-        private static readonly ImmutableArray<KnownType> TrackedCollectionTypes =
+        private static readonly ImmutableArray<KnownType> trackedCollectionTypes =
             ImmutableArray.Create(
                 KnownType.System_Collections_Generic_Dictionary_TKey_TValue,
                 KnownType.System_Collections_Generic_List_T,
@@ -57,7 +55,7 @@ namespace SonarAnalyzer.Rules.CSharp
                 KnownType.System_Array
             );
 
-        private static readonly HashSet<string> AddMethods = new HashSet<string>
+        private static readonly HashSet<string> addMethods = new HashSet<string>
         {
             nameof(List<object>.Add),
             nameof(List<object>.AddRange),
@@ -70,7 +68,7 @@ namespace SonarAnalyzer.Rules.CSharp
             "TryAdd" // This is a .NetCore 2.0+ method on Dictionary
         };
 
-        private static readonly HashSet<string> IgnoredMethods = new HashSet<string>
+        private static readonly HashSet<string> ignoredMethods = new HashSet<string>
         {
             nameof(List<object>.GetHashCode),
             nameof(List<object>.Equals),
@@ -90,41 +88,33 @@ namespace SonarAnalyzer.Rules.CSharp
             nameof(Dictionary<object, object>.TryGetValue),
         };
 
-        protected override void Initialize(SonarAnalysisContext context)
+        public ISymbolicExecutionAnalysisContext AddChecks(CSharpExplodedGraph explodedGraph, SyntaxNodeAnalysisContext context) =>
+            new AnalysisContext(explodedGraph);
+
+        private sealed class AnalysisContext : ISymbolicExecutionAnalysisContext
         {
-            context.RegisterExplodedGraphBasedAnalysis(CheckForEmptyCollectionAccess);
+            private readonly HashSet<SyntaxNode> emptyCollections = new HashSet<SyntaxNode>();
+            private readonly HashSet<SyntaxNode> nonEmptyCollections = new HashSet<SyntaxNode>();
+            private readonly EmptyCollectionAccessedCheck check;
+
+            public AnalysisContext(CSharpExplodedGraph explodedGraph)
+            {
+                this.check = new EmptyCollectionAccessedCheck(explodedGraph);
+                this.check.CollectionAccessed += CollectionAccessedHandler;
+
+                explodedGraph.AddExplodedGraphCheck(this.check);
+            }
+
+            public IEnumerable<Diagnostic> GetDiagnostics() =>
+                this.emptyCollections.Except(this.nonEmptyCollections).Select(node => Diagnostic.Create(rule, node.GetLocation()));
+
+            public void Dispose() => this.check.CollectionAccessed -= CollectionAccessedHandler;
+
+            private void CollectionAccessedHandler(object sender, CollectionAccessedEventArgs args) =>
+                (args.IsEmpty ? this.emptyCollections : this.nonEmptyCollections).Add(args.Node);
         }
 
-        private void CheckForEmptyCollectionAccess(CSharpExplodedGraph explodedGraph, SyntaxNodeAnalysisContext context)
-        {
-            var check = new EmptyCollectionAccessedCheck(explodedGraph);
-            explodedGraph.AddExplodedGraphCheck(check);
-
-            var emptyCollections = new HashSet<SyntaxNode>();
-            var nonEmptyCollections = new HashSet<SyntaxNode>();
-
-            void explorationEnded(object sender, EventArgs args) => emptyCollections.Except(nonEmptyCollections)
-                    .Select(node => Diagnostic.Create(rule, node.GetLocation()))
-                    .ToList()
-                    .ForEach(d => context.ReportDiagnosticWhenActive(d));
-
-            void collectionAccessedHandler(object sender, CollectionAccessedEventArgs args) =>
-                (args.IsEmpty ? emptyCollections : nonEmptyCollections).Add(args.Node);
-
-            explodedGraph.ExplorationEnded += explorationEnded;
-            check.CollectionAccessed += collectionAccessedHandler;
-            try
-            {
-                explodedGraph.Walk();
-            }
-            finally
-            {
-                check.CollectionAccessed -= collectionAccessedHandler;
-                explodedGraph.ExplorationEnded -= explorationEnded;
-            }
-        }
-
-        internal sealed class EmptyCollectionAccessedCheck : ExplodedGraphCheck
+        private sealed class EmptyCollectionAccessedCheck : ExplodedGraphCheck
         {
             public event EventHandler<CollectionAccessedEventArgs> CollectionAccessed;
 
@@ -173,7 +163,7 @@ namespace SonarAnalyzer.Rules.CSharp
                 var collectionType = GetCollectionType(collectionSymbol);
 
                 // When invoking a collection method ...
-                if (collectionType.IsAny(TrackedCollectionTypes))
+                if (collectionType.IsAny(trackedCollectionTypes))
                 {
                     var methodSymbol = this.semanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
                     if (IsIgnoredMethod(methodSymbol))
@@ -188,7 +178,7 @@ namespace SonarAnalyzer.Rules.CSharp
                         return collectionSymbol.RemoveConstraint(CollectionCapacityConstraint.Empty, newProgramState);
                     }
 
-                    if (AddMethods.Contains(methodSymbol.Name))
+                    if (addMethods.Contains(methodSymbol.Name))
                     {
                         // ... set constraint if we are adding items
                         newProgramState = collectionSymbol.SetConstraint(CollectionCapacityConstraint.NotEmpty,
@@ -212,7 +202,7 @@ namespace SonarAnalyzer.Rules.CSharp
 
                 // When accessing elements from a collection ...
                 if (collectionType?.ConstructedFrom != null &&
-                    collectionType.ConstructedFrom.IsAny(TrackedCollectionTypes))
+                    collectionType.ConstructedFrom.IsAny(trackedCollectionTypes))
                 {
                     if (collectionType.ConstructedFrom.Is(KnownType.System_Collections_Generic_Dictionary_TKey_TValue) &&
                         IsDictionarySetItem(elementAccess))
@@ -284,7 +274,7 @@ namespace SonarAnalyzer.Rules.CSharp
             private static bool IsIgnoredMethod(IMethodSymbol methodSymbol)
             {
                 return methodSymbol == null
-                    || IgnoredMethods.Contains(methodSymbol.Name);
+                    || ignoredMethods.Contains(methodSymbol.Name);
             }
 
             private CollectionCapacityConstraint GetArrayConstraint(ArrayCreationExpressionSyntax arrayCreation)
@@ -373,14 +363,14 @@ namespace SonarAnalyzer.Rules.CSharp
 
             private static bool IsCollectionConstructor(IMethodSymbol constructorSymbol) =>
                 constructorSymbol?.ContainingType?.ConstructedFrom != null &&
-                constructorSymbol.ContainingType.ConstructedFrom.IsAny(TrackedCollectionTypes);
+                constructorSymbol.ContainingType.ConstructedFrom.IsAny(trackedCollectionTypes);
 
             private static INamedTypeSymbol GetCollectionType(ISymbol collectionSymbol) =>
                 (collectionSymbol.GetSymbolType() as INamedTypeSymbol)?.ConstructedFrom ?? // collections
                 collectionSymbol.GetSymbolType()?.BaseType; // arrays
         }
 
-        internal sealed class CollectionAccessedEventArgs : EventArgs
+        private sealed class CollectionAccessedEventArgs : EventArgs
         {
             public SyntaxNode Node { get; }
             public bool IsEmpty { get; }
