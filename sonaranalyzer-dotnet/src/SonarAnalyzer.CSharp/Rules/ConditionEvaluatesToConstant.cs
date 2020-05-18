@@ -41,27 +41,27 @@ namespace SonarAnalyzer.Rules.CSharp
     [Rule(S2589DiagnosticId)]
     public sealed class ConditionEvaluatesToConstant : SonarDiagnosticAnalyzer
     {
-        private static readonly ISet<SyntaxKind> OmittedSyntaxKinds = new HashSet<SyntaxKind>
+        private static readonly ISet<SyntaxKind> omittedSyntaxKinds = new HashSet<SyntaxKind>
         {
             SyntaxKind.LogicalAndExpression,
             SyntaxKind.LogicalOrExpression
         };
 
-        private static readonly ISet<SyntaxKind> LoopBreakingStatements = new HashSet<SyntaxKind>
+        private static readonly ISet<SyntaxKind> loopBreakingStatements = new HashSet<SyntaxKind>
         {
             SyntaxKind.BreakStatement,
             SyntaxKind.ThrowStatement,
             SyntaxKind.ReturnStatement
         };
 
-        private static readonly ISet<SyntaxKind> LoopStatements = new HashSet<SyntaxKind>
+        private static readonly ISet<SyntaxKind> loopStatements = new HashSet<SyntaxKind>
         {
             SyntaxKind.WhileStatement,
             SyntaxKind.DoStatement,
             SyntaxKind.ForStatement
         };
 
-        private static readonly ISet<SyntaxKind> ConditionalStatements = new HashSet<SyntaxKind>
+        private static readonly ISet<SyntaxKind> conditionalStatements = new HashSet<SyntaxKind>
         {
             SyntaxKind.IfStatement,
             SyntaxKind.WhileStatement,
@@ -70,7 +70,7 @@ namespace SonarAnalyzer.Rules.CSharp
             SyntaxKind.CoalesceExpression
         };
 
-        private static readonly ISet<SyntaxKind> CoalesceExpressions = new HashSet<SyntaxKind>
+        private static readonly ISet<SyntaxKind> coalesceExpressions = new HashSet<SyntaxKind>
         {
             SyntaxKind.CoalesceExpression,
             SyntaxKindEx.CoalesceAssignmentExpression
@@ -80,13 +80,13 @@ namespace SonarAnalyzer.Rules.CSharp
         // this problem we would need to link all CFG blocks for catch clauses to all statements within
         // the try block. This is unreasonable because it will generate tons of paths, thus making
         // the debugging a hell and probably slowing down the performance.
-        private static readonly ISet<SyntaxKind> IgnoredBlocks = new HashSet<SyntaxKind>
+        private static readonly ISet<SyntaxKind> ignoredBlocks = new HashSet<SyntaxKind>
         {
             SyntaxKind.FinallyClause,
             SyntaxKind.CatchClause,
         };
 
-        private static readonly ISet<SyntaxKind> BooleanLiterals = new HashSet<SyntaxKind>
+        private static readonly ISet<SyntaxKind> booleanLiterals = new HashSet<SyntaxKind>
         {
             SyntaxKind.TrueLiteralExpression,
             SyntaxKind.FalseLiteralExpression
@@ -121,16 +121,16 @@ namespace SonarAnalyzer.Rules.CSharp
             var isUnknown = new HashSet<SyntaxNode>();
             var hasYieldStatement = false;
 
-            void instructionProcessed(object sender, InstructionProcessedEventArgs args)
+            void InstructionProcessed(object sender, InstructionProcessedEventArgs args)
             {
                 hasYieldStatement = hasYieldStatement || IsYieldNode(args.ProgramPoint.Block);
                 CollectCoalesce(args, isNull, isNotNull, isUnknown, context.SemanticModel);
             }
 
-            void collectConditions(object sender, ConditionEvaluatedEventArgs args) =>
-                CollectConditions(args, conditionTrue, conditionFalse, context.SemanticModel);
+            void CollectConditions(object sender, ConditionEvaluatedEventArgs args) =>
+                ConditionEvaluatesToConstant.CollectConditions(args, conditionTrue, conditionFalse, context.SemanticModel);
 
-            void explorationEnded(object sender, EventArgs args)
+            void ExplorationEnded(object sender, EventArgs args)
             {
                 // Do not raise issue in generator functions (See #1295)
                 if (hasYieldStatement)
@@ -161,9 +161,9 @@ namespace SonarAnalyzer.Rules.CSharp
                     .ForEach(d => context.ReportDiagnosticWhenActive(d));
             }
 
-            explodedGraph.InstructionProcessed += instructionProcessed;
-            explodedGraph.ExplorationEnded += explorationEnded;
-            explodedGraph.ConditionEvaluated += collectConditions;
+            explodedGraph.InstructionProcessed += InstructionProcessed;
+            explodedGraph.ExplorationEnded += ExplorationEnded;
+            explodedGraph.ConditionEvaluated += CollectConditions;
 
             try
             {
@@ -171,9 +171,9 @@ namespace SonarAnalyzer.Rules.CSharp
             }
             finally
             {
-                explodedGraph.InstructionProcessed -= instructionProcessed;
-                explodedGraph.ExplorationEnded -= explorationEnded;
-                explodedGraph.ConditionEvaluated -= collectConditions;
+                explodedGraph.InstructionProcessed -= InstructionProcessed;
+                explodedGraph.ExplorationEnded -= ExplorationEnded;
+                explodedGraph.ConditionEvaluated -= CollectConditions;
             }
         }
 
@@ -182,7 +182,7 @@ namespace SonarAnalyzer.Rules.CSharp
             jumpBlock.JumpNode.IsAnyKind(SyntaxKind.YieldReturnStatement, SyntaxKind.YieldBreakStatement);
 
         private static bool IsInsideCatchOrFinallyBlock(SyntaxNode c) =>
-            c.Ancestors().Any(n => n.IsAnyKind(IgnoredBlocks));
+            c.Ancestors().Any(n => n.IsAnyKind(ignoredBlocks));
 
         private static bool IsConditionOfLoopWithBreak(ExpressionSyntax constantExpression)
         {
@@ -206,10 +206,10 @@ namespace SonarAnalyzer.Rules.CSharp
         }
 
         private static SyntaxNode GetParentLoop(SyntaxNode syntaxNode) =>
-            syntaxNode.Ancestors().First(a => a.IsAnyKind(LoopStatements));
+            syntaxNode.Ancestors().First(a => a.IsAnyKind(loopStatements));
 
         private static bool IsLoopBreakingStatement(SyntaxNode syntaxNode) =>
-            syntaxNode.IsAnyKind(LoopBreakingStatements);
+            syntaxNode.IsAnyKind(loopBreakingStatements);
 
         private static Diagnostic GetDiagnostics(SyntaxNode constantNode, bool constantValue)
         {
@@ -236,7 +236,7 @@ namespace SonarAnalyzer.Rules.CSharp
                 // parent has an unreachable branch.
                 if (constantExpression is ExpressionSyntax expression)
                 {
-                    bool unreachableCodeIsDetectable = constantValue ?
+                    var unreachableCodeIsDetectable = constantValue ?
                     !expression.GetSelfOrTopParenthesizedExpression().Parent.IsKind(SyntaxKind.LogicalAndExpression)
                     : !expression.GetSelfOrTopParenthesizedExpression().Parent.IsKind(SyntaxKind.LogicalOrExpression);
                     // when an expression is true with "And" parent or is false with "Or" parent
@@ -298,19 +298,17 @@ namespace SonarAnalyzer.Rules.CSharp
             }
         }
 
-        private static bool IsShortcuttingExpression(BinaryExpressionSyntax expression, bool constantValueIsTrue)
-        {
-            return expression != null &&
-                (expression.IsKind(SyntaxKind.LogicalAndExpression) && !constantValueIsTrue ||
-                    expression.IsKind(SyntaxKind.LogicalOrExpression) && constantValueIsTrue);
-        }
+        private static bool IsShortcuttingExpression(SyntaxNode expression, bool constantValueIsTrue) =>
+            expression != null &&
+            (expression.IsKind(SyntaxKind.LogicalAndExpression) && !constantValueIsTrue ||
+             expression.IsKind(SyntaxKind.LogicalOrExpression) && constantValueIsTrue);
 
-        private static void CollectConditions(ConditionEvaluatedEventArgs args, HashSet<SyntaxNode> conditionTrue, HashSet<SyntaxNode> conditionFalse, SemanticModel semanticModel)
+        private static void CollectConditions(ConditionEvaluatedEventArgs args, ISet<SyntaxNode> conditionTrue, ISet<SyntaxNode> conditionFalse, SemanticModel semanticModel)
         {
             var condition = (args.Condition as ExpressionSyntax).RemoveParentheses() ?? args.Condition;
 
             if (condition == null ||
-                OmittedSyntaxKinds.Contains(condition.Kind()) ||
+                omittedSyntaxKinds.Contains(condition.Kind()) ||
                 IsConstantOrLiteralCondition(condition, semanticModel))
             {
                 return;
@@ -328,32 +326,32 @@ namespace SonarAnalyzer.Rules.CSharp
 
         private static bool IsConstantOrLiteralCondition(SyntaxNode condition, SemanticModel semanticModel)
         {
-            if (!condition.Parent.IsAnyKind(ConditionalStatements))
+            if (!condition.Parent.IsAnyKind(conditionalStatements))
             {
                 return false;
             }
 
             return IsBooleanLiteral(condition) ||
-                IsBooleanConstant(condition, semanticModel);
+                   IsBooleanConstant(condition, semanticModel);
 
-            bool IsBooleanConstant(SyntaxNode syntaxNode, SemanticModel model)
+            static bool IsBooleanConstant(SyntaxNode syntaxNode, SemanticModel model)
             {
                 if (syntaxNode is MemberAccessExpressionSyntax ||
                     syntaxNode is IdentifierNameSyntax)
                 {
-                    var constant = semanticModel.GetConstantValue(syntaxNode);
+                    var constant = model.GetConstantValue(syntaxNode);
                     return constant.HasValue && constant.Value is bool;
                 }
                 return false;
             }
 
-            bool IsBooleanLiteral(SyntaxNode syntaxNode)
+            static bool IsBooleanLiteral(SyntaxNode syntaxNode)
             {
-                return syntaxNode.IsAnyKind(BooleanLiterals);
+                return syntaxNode.IsAnyKind(booleanLiterals);
             }
         }
 
-        private static void CollectCoalesce(InstructionProcessedEventArgs args, HashSet<SyntaxNode> isNull, HashSet<SyntaxNode> isNotNull, HashSet<SyntaxNode> isUnknown, SemanticModel semanticModel)
+        private static void CollectCoalesce(InstructionProcessedEventArgs args, ISet<SyntaxNode> isNull, ISet<SyntaxNode> isNotNull, ISet<SyntaxNode> isUnknown, SemanticModel semanticModel)
         {
             void ProcessOperand(ExpressionSyntax operand, bool useNotNull)
             {
@@ -362,21 +360,24 @@ namespace SonarAnalyzer.Rules.CSharp
                     isNull.Add(operand);
                     return;
                 }
+
                 var symbol = semanticModel.GetSymbolInfo(operand.RemoveParentheses()).Symbol;
-                if (symbol != null)
+                if (symbol == null)
                 {
-                    if (symbol.HasConstraint(ObjectConstraint.Null, args.ProgramState))
-                    {
-                        isNull.Add(operand);
-                    }
-                    else if (useNotNull && symbol.HasConstraint(ObjectConstraint.NotNull, args.ProgramState))
-                    {
-                        isNotNull.Add(operand);
-                    }
-                    else
-                    {
-                        isUnknown.Add(operand);
-                    }
+                    return;
+                }
+
+                if (symbol.HasConstraint(ObjectConstraint.Null, args.ProgramState))
+                {
+                    isNull.Add(operand);
+                }
+                else if (useNotNull && symbol.HasConstraint(ObjectConstraint.NotNull, args.ProgramState))
+                {
+                    isNotNull.Add(operand);
+                }
+                else
+                {
+                    isUnknown.Add(operand);
                 }
             }
             var rightOperands = args.Instruction.DescendantNodesAndSelf()
@@ -389,7 +390,7 @@ namespace SonarAnalyzer.Rules.CSharp
                 ProcessOperand(right, false);
             }
             if(args.ProgramPoint.Block is BinaryBranchBlock bbb
-                && bbb.BranchingNode.IsAnyKind(CoalesceExpressions)
+                && bbb.BranchingNode.IsAnyKind(coalesceExpressions)
                 && args.ProgramPoint.Offset == args.ProgramPoint.Block.Instructions.Count - 1 //Last instruction of BBB holds ??= left operand value
                 && args.ProgramPoint.Block.Instructions[args.ProgramPoint.Offset] is ExpressionSyntax left)
             {
