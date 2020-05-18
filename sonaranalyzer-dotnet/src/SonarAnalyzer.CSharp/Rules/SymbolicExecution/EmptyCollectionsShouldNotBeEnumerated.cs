@@ -271,13 +271,13 @@ namespace SonarAnalyzer.Rules.CSharp
                     : newProgramState;
             }
 
-            private static bool IsIgnoredMethod(IMethodSymbol methodSymbol)
+            private static bool IsIgnoredMethod(ISymbol methodSymbol)
             {
                 return methodSymbol == null
                     || ignoredMethods.Contains(methodSymbol.Name);
             }
 
-            private CollectionCapacityConstraint GetArrayConstraint(ArrayCreationExpressionSyntax arrayCreation)
+            private static CollectionCapacityConstraint GetArrayConstraint(ArrayCreationExpressionSyntax arrayCreation)
             {
                 // Only one-dimensional arrays can be empty, others are indeterminate, this can be improved in the future
                 if (arrayCreation?.Type?.RankSpecifiers == null ||
@@ -294,7 +294,7 @@ namespace SonarAnalyzer.Rules.CSharp
                     : null;
             }
 
-            private CollectionCapacityConstraint GetCollectionConstraint(IMethodSymbol constructor)
+            private static CollectionCapacityConstraint GetCollectionConstraint(IMethodSymbol constructor)
             {
                 // Default constructor, or constructor that specifies capacity means empty collection,
                 // otherwise do not apply constraint because we cannot be sure what has been passed
@@ -305,7 +305,7 @@ namespace SonarAnalyzer.Rules.CSharp
                 return defaultCtorOrCapacityCtor ? CollectionCapacityConstraint.Empty : null;
             }
 
-            private CollectionCapacityConstraint GetInitializerConstraint(InitializerExpressionSyntax initializer)
+            private static CollectionCapacityConstraint GetInitializerConstraint(InitializerExpressionSyntax initializer)
             {
                 if (initializer?.Expressions == null)
                 {
@@ -317,7 +317,7 @@ namespace SonarAnalyzer.Rules.CSharp
                     : CollectionCapacityConstraint.NotEmpty;
             }
 
-            private static ProgramState RemoveCollectionConstraintsFromArguments(ArgumentListSyntax argumentList,
+            private static ProgramState RemoveCollectionConstraintsFromArguments(BaseArgumentListSyntax argumentList,
                 ProgramState programState)
             {
                 return GetArgumentSymbolicValues(argumentList, programState)
@@ -325,7 +325,7 @@ namespace SonarAnalyzer.Rules.CSharp
                         (state, value) => state.RemoveConstraint(value, CollectionCapacityConstraint.Empty));
             }
 
-            private static IEnumerable<SymbolicValue> GetArgumentSymbolicValues(ArgumentListSyntax argumentList,
+            private static IEnumerable<SymbolicValue> GetArgumentSymbolicValues(BaseArgumentListSyntax argumentList,
                 ProgramState programState)
             {
                 if (argumentList?.Arguments == null)
@@ -357,11 +357,11 @@ namespace SonarAnalyzer.Rules.CSharp
                 return true;
             }
 
-            private static bool IsDictionarySetItem(ElementAccessExpressionSyntax elementAccess) =>
+            private static bool IsDictionarySetItem(SyntaxNode elementAccess) =>
                 (elementAccess.GetFirstNonParenthesizedParent() as AssignmentExpressionSyntax)
                     ?.Left.RemoveParentheses() == elementAccess;
 
-            private static bool IsCollectionConstructor(IMethodSymbol constructorSymbol) =>
+            private static bool IsCollectionConstructor(ISymbol constructorSymbol) =>
                 constructorSymbol?.ContainingType?.ConstructedFrom != null &&
                 constructorSymbol.ContainingType.ConstructedFrom.IsAny(trackedCollectionTypes);
 
