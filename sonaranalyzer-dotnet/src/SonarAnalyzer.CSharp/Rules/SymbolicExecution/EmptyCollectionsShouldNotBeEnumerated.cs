@@ -99,19 +99,19 @@ namespace SonarAnalyzer.Rules.CSharp
 
             public AnalysisContext(CSharpExplodedGraph explodedGraph)
             {
-                this.check = new EmptyCollectionAccessedCheck(explodedGraph);
-                this.check.CollectionAccessed += CollectionAccessedHandler;
+                check = new EmptyCollectionAccessedCheck(explodedGraph);
+                check.CollectionAccessed += CollectionAccessedHandler;
 
-                explodedGraph.AddExplodedGraphCheck(this.check);
+                explodedGraph.AddExplodedGraphCheck(check);
             }
 
             public IEnumerable<Diagnostic> GetDiagnostics() =>
-                this.emptyCollections.Except(this.nonEmptyCollections).Select(node => Diagnostic.Create(rule, node.GetLocation()));
+                emptyCollections.Except(nonEmptyCollections).Select(node => Diagnostic.Create(rule, node.GetLocation()));
 
-            public void Dispose() => this.check.CollectionAccessed -= CollectionAccessedHandler;
+            public void Dispose() => check.CollectionAccessed -= CollectionAccessedHandler;
 
             private void CollectionAccessedHandler(object sender, CollectionAccessedEventArgs args) =>
-                (args.IsEmpty ? this.emptyCollections : this.nonEmptyCollections).Add(args.Node);
+                (args.IsEmpty ? emptyCollections : nonEmptyCollections).Add(args.Node);
         }
 
         private sealed class EmptyCollectionAccessedCheck : ExplodedGraphCheck
@@ -146,7 +146,7 @@ namespace SonarAnalyzer.Rules.CSharp
             private ProgramState ProcessInvocation(ProgramState programState, InvocationExpressionSyntax invocation)
             {
                 // Argument of the nameof expression is not pushed on stack so we need to exit the checks
-                if (invocation.IsNameof(this.semanticModel))
+                if (invocation.IsNameof(semanticModel))
                 {
                     return programState;
                 }
@@ -159,13 +159,13 @@ namespace SonarAnalyzer.Rules.CSharp
                     return newProgramState;
                 }
 
-                var collectionSymbol = this.semanticModel.GetSymbolInfo(memberAccess.Expression).Symbol;
+                var collectionSymbol = semanticModel.GetSymbolInfo(memberAccess.Expression).Symbol;
                 var collectionType = GetCollectionType(collectionSymbol);
 
                 // When invoking a collection method ...
                 if (collectionType.IsAny(trackedCollectionTypes))
                 {
-                    var methodSymbol = this.semanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+                    var methodSymbol = semanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
                     if (IsIgnoredMethod(methodSymbol))
                     {
                         // ... ignore some methods that are irrelevant
@@ -197,7 +197,7 @@ namespace SonarAnalyzer.Rules.CSharp
 
             private ProgramState ProcessElementAccess(ProgramState programState, ElementAccessExpressionSyntax elementAccess)
             {
-                var collectionSymbol = this.semanticModel.GetSymbolInfo(elementAccess.Expression).Symbol;
+                var collectionSymbol = semanticModel.GetSymbolInfo(elementAccess.Expression).Symbol;
                 var collectionType = GetCollectionType(collectionSymbol);
 
                 // When accessing elements from a collection ...
@@ -245,7 +245,7 @@ namespace SonarAnalyzer.Rules.CSharp
                 if (instruction.IsKind(SyntaxKind.ObjectCreationExpression))
                 {
                     var objectCreationSyntax = (ObjectCreationExpressionSyntax)instruction;
-                    var constructor = this.semanticModel.GetSymbolInfo(objectCreationSyntax).Symbol as IMethodSymbol;
+                    var constructor = semanticModel.GetSymbolInfo(objectCreationSyntax).Symbol as IMethodSymbol;
                     // When a collection is being created ...
                     if (IsCollectionConstructor(constructor))
                     {
